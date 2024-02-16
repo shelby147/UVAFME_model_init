@@ -1,0 +1,14 @@
+
+Folder structure
+raw - raw data products used, if available
+scripts - creating input files for UVAFME and analyzing output
+scripts/inputs - creating input files for TVSF and KLC study areas
+scripts/analyses - creating figures from model output in TVSF and KLC
+scripts/.../intermediate_data - intermediate data products which required significant computational time or were created by hand
+input_data - input data TVSF and KLC under different climate scenarios and initialization procedures
+UVAFME_src - source code for version of UVAFME model used in this study
+file_lists - file lists to specify inputs for UVAFME runs
+jobfiles - jobs to call UVAFME with each file list
+logs - output from jobs to screen for errors
+output_data - output data for TVSF and KLC under different climate scenarios and initialization procedures
+ 
