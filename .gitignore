@@ -1,5 +1,7 @@
 *.zip
 *.sh
+*.o
+*.mod
 input_data/
 output_data/
 raw/

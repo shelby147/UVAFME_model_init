@@ -1,5 +1,6 @@
 # UVA Forest Model Enhanced: Initialization version
 This repository holds the source code for UVAFME and pre- and post-processing scripts for figures and data in Sundquist _et al. in review_. 
+
 UVAFME is an individual-based forest gap model which simulates the establishment, growth, and mortality of individual trees on independent gaps or "plots" of a forested landscape.
 
 For more information about UVAFME visit the [UVAFME website](https://uvafme.github.io/) and GitHub repository for the [previous version](https://github.com/UVAFME/UVAFME_model/) of the model.
@@ -9,6 +10,8 @@ Please contact [Shelby Sundquist](https://orcid.org/0000-0001-5379-0008) at ss39
 Model input and output data and raw and intermediate data products are available upon request. 
 
 ## Repository folder structure
+
+_Summaries are available in select subdirectories in Description.txt_
 
 scripts - creating input files for UVAFME and analyzing output
 
