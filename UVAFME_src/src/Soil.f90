@@ -1052,7 +1052,7 @@ module Soil
             if (i /= IWDW) then
                 ! Add in parameters for everything but well-decayed wood
                 if (soil%litter(i) > epsilon(1.0)) then
-                    nc = nc + 1
+                    nc = min(nc + 1, 1500)
                     ! Current weight (t/ha)
                     C(nc, 1) = soil%litter(i)*litter_params(i, 10)
                     ! Current N (tN/ha)
@@ -1364,7 +1364,7 @@ module Soil
 
         ! Create new well-decayed wood cohort
         if (WDW_new > epsilon(1.0)) then
-            nc = nc + 1
+            nc = min(nc + 1, 1500)
             if (nc > NCOH_MAX) then
             end if
             ! Initital weight (t/ha)
@@ -1499,7 +1499,7 @@ module Soil
                 soil%cohorts(i, j) = C(i, j)
             end do
         end do
-        soil%ncohort = nc
+        soil%ncohort = min(nc, 1500)
         soil%fuel_sum = fuel_sum
         soil%fuels = fuels
         soil%litBD = litBD
@@ -1634,7 +1634,7 @@ module Soil
                 soil%cohorts(i, j) = C(i, j)
             end do
         end do
-        soil%ncohort = nc
+        soil%ncohort = min(nc, 1500)
 
     end subroutine bulldoze_soil
 
@@ -3094,7 +3094,7 @@ end subroutine rate_of_spread
                 soil%cohorts(i, j) = C(i, j)
             end do
         end do
-        soil%ncohort = nc
+        soil%ncohort = min(nc, 1500)
 
         soil%fan = sfan
 

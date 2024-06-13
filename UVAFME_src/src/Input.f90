@@ -150,7 +150,7 @@ contains
             read(rt_file, uvafme, iostat = ios, iomsg = msg)
             if (ios /= 0) then
                 ! Problem reading file - tell user.
-                write(message, '(A, I6, A)') "Error reading run time file",    &
+                write(*, '(A, I6, A)') "Error reading run time file",    &
                     ios, "IOMSG: ", msg
                 call warning(message)
                 call warning("Using default parameters")
