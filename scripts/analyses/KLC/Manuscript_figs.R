@@ -303,7 +303,7 @@ dat = merge(plotsdat, mgmtdat, by = c("siteID","year","iscen","cscen"))
 
 mgmttemp = mgmtdat[mgmtdat$cscen == "hist",]
 mgmttemp$classification = sapply(mgmttemp$classification, FUN = function(x) classes11hash[[toString(x)]])
-years = seq(1913, 2100, 5)
+years = seq(1915, 2100, 5)
 mgmttemp$classification = factor(mgmttemp$classification)
 mgmttemp$iscen = factor(mgmttemp$iscen, levels = c("Spin-up","Initialization"))
 mgmttemp =  as.data.frame(mgmttemp %>% group_by(siteID, iscen) %>% subset(year %in% years) %>% mutate(nextclass = lead(classification, n = 1)))
@@ -385,4 +385,35 @@ g <- ggplot(dat, aes(x = year, next_x = nextyear,
         axis.text = element_text(size = 15)) +
   ylab("Number of sites") + xlab("Year") + ggtitle("UVAFME spinup under historic climate KLC")
 ggsave(paste0(figDir, "spinup_500y_KLC.png"), g, width = 10, height = 6)
+
+
+SSDparams = fread("scripts/inputs/KLC/intermediate_data/SSDparams.csv")
+
+# White spruce is hardly present in this study area so leaving it out. Same with other absent species from SSDparams
+spec = c("PINUcont","PICEmari","POPUtrem")
+colorss = c("#33A02C","#1F78B4","#FDBF6F")
+# Dark green pine, dark blue black spruce, orange aspen
+
+g1 = ggplot() + xlim(0,40)
+g2 = ggplot() + xlim(0,40) 
+g3 = ggplot() + xlim(0,40) 
+for(sp in 1:3) {
+  temp1 = SSDparams[SSDparams$phase == "SI" & SSDparams$species == spec[sp],]
+  g1 <- g1 + stat_function(fun = dweibull, 
+  args = list(shape = temp1$shape,
+              scale = temp1$scale), 
+              color = colorss[sp])
+  temp2 = SSDparams[SSDparams$phase == "SE" & SSDparams$species == spec[sp],]
+  g2 <- g2 + stat_function(fun = dweibull, 
+  args = list(shape = temp2$shape,
+              scale = temp2$scale), 
+              color = colorss[sp])
+  temp3 = SSDparams[SSDparams$phase == "CT" & SSDparams$species == spec[sp],]
+  g3 <- g3 + stat_function(fun = dweibull, 
+  args = list(shape = temp3$shape,
+              scale = temp3$scale), 
+              color = colorss[sp])
+}
+p = ggarrange(g1, g2, g3, ncol = 3, common.legend = T)
+ggsave(paste0(figDir, "SSD_curves.png"), p, width = 12, height = 4)
 
