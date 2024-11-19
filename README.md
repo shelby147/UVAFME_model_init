@@ -1,5 +1,5 @@
 # UVA Forest Model Enhanced: Initialization version
-This repository holds the source code for UVAFME and pre- and post-processing scripts for figures and data in Sundquist _et al._ (2024). [DOI: ](https://dx.doi.org/10.1088/2752-664X/ad7d94)
+This repository holds the source code for UVAFME and pre- and post-processing scripts for figures and data in Sundquist _et al._ (2024). [https://dx.doi.org/10.1088/2752-664X/ad7d94](https://dx.doi.org/10.1088/2752-664X/ad7d94)
 
 UVAFME is an individual-based forest gap model which simulates the establishment, growth, and mortality of individual trees on independent gaps or "plots" of a forested landscape.
 
