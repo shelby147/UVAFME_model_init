@@ -1,0 +1,111 @@
+
+
+```{r}
+library(data.table)
+library(dplyr)
+library(tidyverse)
+
+inDir = "input_data/KLC/SSDtest/"
+tempDir = "scripts/inputs/KLC/intermediate_data/"
+```
+
+
+# Pull in study region and select random locations
+```{r}
+region = fread("raw/LandsatTreeSpecies/tile/dat_59N_128W_specprob_age_BA.csv")
+#0 = unforested, 3 = subalpine fir, 17 = white spruce, 18 = black spruce, 23 = lodgepole pine, 29 = aspen
+
+set.seed(147)
+
+sites = region %>% group_by(Domspec) %>% subset(Domspec != 0) %>% sample_n(100)
+```
+
+
+# Build input for GetSiteDat.R
+```{r}
+soilinput = sites[,1]
+soilinput$latitude = sites$y
+soilinput$longitude = sites$x
+soilinput = soilinput[,-1]
+soilinput$name = NA
+soilinput$site = NA
+for(i in 1:nrow(soilinput)) {
+  soilinput$name[i] = paste0("SSDtest_",i)
+  soilinput$site[i] = i
+}
+
+colnames(soilinput) = c("latitude","longitude","name","site")
+write.csv(soilinput, paste0(tempDir, "CA_sitedat_input.csv"), quote = F, row.names = F)
+```
+
+
+# Write inputs: site, sitelist, rangelist, 
+```{r}
+soil = read.csv(paste0(tempDir, "CA_soildat_output.csv"))
+
+soil$A_depth = 1
+soil$flow = 0; soil$row = 0; soil$col = 0; soil$ind = 0
+
+site = soil %>% select(site,latitude,longitude,name,region,elevation,slope,aspect,a_sat,a_fc,a_pwp,o_sat,o_fc,o_pwp,a_bd,o_bd,itxt,hum_init,A_depth,wprob,flow,row,col,ind)
+
+# Adding the rest of the columns
+site$management = 0
+site$sel_cutting = 0
+site$planting = "PICEglau" # only thing that gets planted (planting only called after harvest)
+site$viability = 1
+site$rotation_time = 0
+site$dbh_thresh = 0 
+site$thinning = 0
+site$year_management = 0
+site$thin_perc = 0
+site$shearblading = 0
+site$pruning = 0
+site$init_year = 0
+
+site$unit = 0
+
+site = site %>% select(site,latitude,longitude,name,region,elevation,slope,aspect,a_sat,a_fc,a_pwp,o_sat,o_fc,o_pwp,a_bd,o_bd,itxt,hum_init,A_depth,wprob,flow,row,col,ind,management,sel_cutting,planting,viability,rotation_time,dbh_thresh,thinning,year_management,thin_perc,shearblading,pruning,unit,init_year)
+
+write.csv(site, paste0(inDir, "UVAFME2018_site.csv"), row.names = F, quote = F)
+
+sitelist = cbind(site$site, 1:nrow(site))
+colnames(sitelist) = c("siteID","runID")
+sitelist = as.data.frame(sitelist)
+sitelist$altitude = NA; sitelist$end = NA
+write.csv(sitelist, paste0(inDir, "UVAFME2018_sitelist.csv"), quote = F, row.names = F, na = "")
+
+rangelist  = site %>% select(site, latitude, longitude)
+rangelist$ALNUsinu = 1
+rangelist$ALNUtenu = 1
+rangelist$BETUneoa = 1
+rangelist$LARIlari = 0
+rangelist$PICEglau = 1
+rangelist$PICEmari = 1
+rangelist$POPUbals = 1
+rangelist$POPUtrem = 1
+rangelist$SALIplan = 0
+rangelist$SALIscou = 1
+rangelist$PINUcont = 1
+rangelist$PICEenge = 1
+rangelist$ABIElasi = 1
+
+write.csv(rangelist, paste0(inDir, "UVAFME2018_rangelist.csv"), quote = F, row.names = F)
+
+```
+
+# Make input file for climateNA (v6.21). Output csv may need to be opened in excel and re-saved so EOF works for climateNA software
+```{r}
+site = fread(paste0(inDir, "UVAFME2018_site.csv"))
+climateNAinput = site %>% select(site, name, latitude, longitude, elevation)
+colnames(climateNAinput) = c("ID1","ID2","lat","long","el")
+
+write.csv(climateNAinput, paste0(tempDir, "SSDtest_CNA_input.csv"), row.names = F, quote = F)
+
+```
+
+
+# Run 002_param_sites.R to create 5 files; 4 for normal climate, 1 for lightning. Make sure input directories/ files are current. This done on local computer, not HPC
+
+
+# Verify that specieslist, litterpars are in input directory (and CA species included)
+# Create runtime and filelists (just edit txt) and output directories

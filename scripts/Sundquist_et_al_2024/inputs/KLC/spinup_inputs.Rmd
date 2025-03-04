@@ -1,0 +1,185 @@
+This script creates input files to run UVAFME from spinup at Canadian sites. This output will be compared to UVAFME initialization output
+
+
+```{r}
+library(data.table)
+library(dplyr)
+library(tidyverse)
+library(terra)
+
+```
+
+```{r}
+# Create input/ output directories
+dir.create(file.path('input_data/KLC/spinup'), showWarnings = FALSE)
+dir.create(file.path('input_data/KLC/spinup/gcm'), showWarnings = FALSE)
+dir.create(file.path('input_data/KLC/spinup/gcm45'), showWarnings = FALSE)
+dir.create(file.path('input_data/KLC/spinup/gcm85'), showWarnings = FALSE)
+dir.create(file.path('file_lists/KLC/spinup'), showWarnings = FALSE)
+
+dir.create(file.path('output_data/KLC/spinup'), showWarnings = FALSE)
+dir.create(file.path('output_data/KLC/spinup/hist'), showWarnings = FALSE)
+dir.create(file.path('output_data/KLC/spinup/gcm45'), showWarnings = FALSE)
+dir.create(file.path('output_data/KLC/spinup/gcm85'), showWarnings = FALSE)
+
+dir.create(file.path("logs/KLC/spinup"))
+dir.create(file.path("jobfiles/KLC/spinup"))
+
+```
+
+```{r}
+# Add files to spinup directory: site (no init soil mods), litterpars, sitelist
+
+# Read soil/ site dat
+tempDir = "scripts/inputs/KLC/intermediate_data/"
+soil = read.csv(paste0(tempDir, "Landsat_init_soildat_output.csv"))
+
+soil$A_depth = 1
+soil$flow = 0; soil$row = 0; soil$col = 0; soil$ind = 0
+
+site = soil %>% dplyr::select(site,latitude,longitude,name,region,elevation,slope,aspect,a_sat,a_fc,a_pwp,o_sat,o_fc,o_pwp,a_bd,o_bd,itxt,hum_init,A_depth,wprob,flow,row,col,ind)
+
+# Adding the rest of the columns
+site$management = 0
+site$sel_cutting = 0
+site$planting = "PICEglau" # only thing that gets planted (planting only called after harvest)
+site$viability = 1
+site$rotation_time = 0
+site$dbh_thresh = 0
+site$thinning = 0
+site$year_management = 0
+site$thin_perc = 0
+site$shearblading = 0
+site$pruning = 0
+site$init_year = 2015
+
+site$unit = 0
+
+site = site %>% dplyr::select(site,latitude,longitude,name,region,elevation,slope,aspect,a_sat,a_fc,a_pwp,o_sat,o_fc,o_pwp,a_bd,o_bd,itxt,hum_init,A_depth,wprob,flow,row,col,ind,management,sel_cutting,planting,viability,rotation_time,dbh_thresh,thinning,year_management,thin_perc,shearblading,pruning,unit,init_year)
+
+site = na.omit(site)
+
+# Checking for sites with problem soil
+nrow(site[xor(site$a_sat<site$a_fc, site$a_fc<site$a_pwp),])
+nrow(site[xor(site$o_sat<site$o_fc, site$o_fc<site$o_pwp),]) 
+nrow(site[site$o_sat<site$o_pwp,]) 
+nrow(site[site$o_fc<site$o_pwp,]) 
+
+# Subset of sites for running spinup
+set.seed(147)
+n = 500 # number of sites for comparison (almost 10%)
+
+sites = sample_n(site, 500)
+fwrite(sites, "input_data/KLC/spinup/UVAFME2018_site.csv")
+
+slist = as.data.frame(sites$site)
+slist$runID = 1:500
+slist$altitude = 0
+slist$end = 0
+
+fwrite(slist, "input_data/KLC/spinup/UVAFME2018_sitelist.csv")
+
+# Copy litterpars (needs to be in the same directory as site)
+file.copy("input_data/KLC/main/UVAFME2018_litterpars.csv", 
+          "input_data/KLC/spinup/UVAFME2018_litterpars.csv")
+```
+
+```{r}
+# Subset GCM inputs for spinup sites
+sites = slist$site
+
+GCM45 = fread("input_data/KLC/gcm45/UVAFME2018_climate_GCM.csv")
+GCM45 = GCM45[GCM45$site %in% sites,]
+fwrite(GCM45, "input_data/KLC/spinup/gcm45/UVAFME2018_climate_GCM.csv")
+
+lGCM45 = fread("input_data/KLC/gcm45/UVAFME2018_lightning_GCM.csv")
+lGCM45 = lGCM45[lGCM45$site %in% sites,]
+fwrite(lGCM45, "input_data/KLC/spinup/gcm45/UVAFME2018_lightning_GCM.csv")
+
+GCM85 = fread("input_data/KLC/gcm85/UVAFME2018_climate_GCM.csv")
+GCM85 = GCM85[GCM85$site %in% sites,]
+fwrite(GCM85, "input_data/KLC/spinup/gcm85/UVAFME2018_climate_GCM.csv")
+
+lGCM85 = fread("input_data/KLC/gcm85/UVAFME2018_lightning_GCM.csv")
+lGCM85 = lGCM85[lGCM85$site %in% sites,]
+fwrite(lGCM85, "input_data/KLC/spinup/gcm85/UVAFME2018_lightning_GCM.csv")
+```
+
+
+```{r}
+# Create spinup runtimes
+rt = readLines("input_data/TVSF/inits_testing/spinup/UVAFME2018_runtime.txt")
+rt # read
+
+rt[39] = "start_year = 1915"
+
+writeLines(rt, "input_data/KLC/spinup/UVAFME2018_runtime.txt")
+
+rt[36] = "with_clim_change = .true."
+rt[37] = "use_gcm = .true."
+rt[40] = "start_gcm = 2015"
+
+writeLines(rt, "input_data/KLC/spinup/gcm/UVAFME2018_runtime.txt")
+
+```
+
+```{r}
+# Create spinup filelists and jobs
+flist = readLines("file_lists/KLC/file_list_hist.txt")
+flist # read it
+
+flist[3] = "output_directory = 'output_data/KLC/spinup/hist/'"
+flist[5] = "site_directory = 'input_data/KLC/spinup/'"
+flist[6] = "sitelist_directory = 'input_data/KLC/spinup/'"
+flist[8] = "rt_directory = 'input_data/KLC/spinup/'"
+
+writeLines(flist, "file_lists/KLC/spinup/file_list_hist.txt")
+
+flist[3] = "output_directory = 'output_data/KLC/spinup/gcm45/'"
+flist[7] = "GCM_directory = 'input_data/KLC/spinup/gcm45/'" 
+flist[8] = "rt_directory = 'input_data/KLC/spinup/gcm/'"
+
+writeLines(flist, "file_lists/KLC/spinup/file_list_gcm45.txt")
+
+flist[3] = "output_directory = 'output_data/KLC/spinup/gcm85/'"
+flist[7] = "GCM_directory = 'input_data/KLC/spinup/gcm85/'" 
+
+writeLines(flist, "file_lists/KLC/spinup/file_list_gcm85.txt")
+
+
+# Jobs 
+
+
+# create jobs
+jobdir = "jobfiles/KLC/spinup"
+l1 = "#!/bin/bash"
+l2 = "#SBATCH -o logs/KLC/spinup/hist.log"
+l3 = "#SBATCH -o logs/KLC/spinup/hist.err.log"
+l4 = paste0("#SBATCH --chdir=", wd)
+l5 = "#SBATCH --mail-type=ALL"
+l6 = "#SBATCH --mem=3000"
+l7 = "#SBATCH --time=48:00:00"
+l8 = "name=file_lists/KLC/spinup/file_list_hist.txt"
+l9 = "srun UVAFME_init $name"
+
+lines = c(l1, l2, l3, l4, l5, l6, l7, l8, l9)
+writeLines(lines, paste0(jobdir, "/spinup_hist.slurm"))
+
+l2 = "#SBATCH -o logs/KLC/spinup/gcm45.log"
+l3 = "#SBATCH -o logs/KLC/spinup/gcm45.err.log"
+l7 = "#SBATCH --time=60:00:00"
+l8 = "name=file_lists/KLC/spinup/file_list_gcm45.txt"
+
+lines = c(l1, l2, l3, l4, l5, l6, l7, l8, l9)
+writeLines(lines, paste0(jobdir, "/spinup_gcm45.slurm"))
+
+l2 = "#SBATCH -o logs/KLC/spinup/gcm85.log"
+l3 = "#SBATCH -o logs/KLC/spinup/gcm85.err.log"
+l7 = "#SBATCH --time=60:00:00"
+l8 = "name=file_lists/KLC/spinup/file_list_gcm85.txt"
+
+lines = c(l1, l2, l3, l4, l5, l6, l7, l8, l9)
+writeLines(lines, paste0(jobdir, "/spinup_gcm85.slurm"))
+
+```
+

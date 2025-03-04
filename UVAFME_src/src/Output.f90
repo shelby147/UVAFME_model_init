@@ -1064,9 +1064,11 @@ contains
               do l = 1, NHC
                   call csv_write(funit, tot_diam_cats_dead(is, l), .false.)
                 end do
+
               do l = 1, NHC
                   call csv_write(funit, tot_biom_cats_dead(is, l), .false.)
               end do
+              
             end if
             if (in_site(is)) then
 

@@ -1,0 +1,13 @@
+mainDir=/scratch/ss3988/UVAFME
+inputMain=input_data/TVSF/mgmt_testing/prj
+outputMain=output_data/TVSF/mgmt_testing/prj
+inputAll=input_data/TVSF/mgmt_testing/main
+rtdir=input_data/TVSF/mgmt_testing/rtdir
+units=UVAFME2018_active_management.csv
+slist=UVAFME2018_sitelist.csv
+sites=UVAFME2018_site.csv
+flistdir=file_lists/TVSF/mgmt_testing/prj
+gcm=
+gcm_lightning=
+climDir=
+mgmtscenario=prj

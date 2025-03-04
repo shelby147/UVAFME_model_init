@@ -1,4 +1,0 @@
-Run check_logs.R. Check output logs. Write files with jobfile names and error messages for any scenarios with errors. If all jobs ran properly, no new output files will be written
-Run CompileFiles.R (or corresponding batch script)
-Use Manuscript_figs.R to generate figures and stats for manuscript. This script sources Utilities.R. 
-Use Supplementary_figs.R to generate figures in suplementary material. 

@@ -86,7 +86,6 @@ module Site
         logical                                          :: buldozed        ! Did we just buldoze soil?
         logical                                          :: prescribed_burn ! Are we burning stand?
         logical                                          :: already_cut     ! Did we already cut?
-        integer                                          :: db0_may         ! Days below 0C in May for ALM pop model
         integer                                          :: rotation_time   ! How often to cut?
         character (len = 8)                              :: planting          ! If cutting, what species will be planted?
         real                                             :: viability         ! If planting, what proportion of seedlings survive?

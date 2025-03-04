@@ -2,6 +2,7 @@
 *.sh
 *.o
 *.mod
+.*
 input_data/
 output_data/
 raw/
@@ -9,3 +10,4 @@ logs/
 jobfiles/
 file_lists/
 scripts/inputs/*/intermediate_data
+!.gitignore

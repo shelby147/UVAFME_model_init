@@ -35,6 +35,9 @@ module Parameters
   logical             :: conds_testing     ! Whether or not to print out daily fuel conditions data
   logical             :: use_monthly_clim  ! Whether or not to read in monthly climate
   logical             :: init_on           ! Are we initializing the site with grown trees?
+  logical             :: active_management ! Will stands be managed based on modeled stand conditions?
+  character(len = 3)  :: management_scenario ! Business as usual or projected management?
+  integer             :: management_scale  ! Multiply management vectors by this 
   logical             :: fire_testing      ! Are we forcing a fire event?
   logical             :: reg_testing       ! Whether or not to print out regeneration data 
   logical             :: mgmt_testing       ! Whether or not to print out fire and regen summary data
@@ -54,7 +57,8 @@ module Parameters
   real                :: precip_change     ! Annual precipitation change for linear climate change (proportion)
   integer             :: start_year         ! Start year
   integer             :: end_year           ! End year
-  integer             :: start_gcm           ! End year for input climate change file (what will be read in as last year)
+  integer             :: start_gcm          ! Year to start using annual input climate data
+  integer             :: start_amgmt       ! Year when active management will start
   integer             :: gcm_duration      ! How long to simulate climate change
   character(len=4)    :: incr_or_decr_prcp ! Increasing ('incr') or deacreasing ('decr') precipitation
   character(len=4)    :: incr_or_decr_temp ! Increasing ('incr') or deacreasing ('decr') temperature

@@ -36,7 +36,7 @@ contains
     subroutine Thin(site, thin_perc)
       ! Data dictionary: calling argumnets
       type(SiteData),        intent(inout) :: site ! Site object
-      real, intent(in) :: thin_perc ! What percentage of stems to remove
+      real, intent(in) :: thin_perc ! What percentage of stems to remove (0-1)
 
       ! Data dictionary: local variables
       integer, dimension(:), allocatable :: dbh_ind          ! Index of sorted tree DBH array
@@ -52,6 +52,7 @@ contains
       integer                            :: ind              ! Tree array index
       integer                            :: thin_num         ! Number of trees to thin
       integer :: numtreeslarge !Number of trees >5cm dbh... not counting smaller than that in what I'm leaving because then everything becomes seedlings
+      integer :: numtreessmall !These will all be chopped!
       integer                            :: is               ! Species index
       integer                            :: trow             ! Row of tree
       integer                            :: tcol             ! Column of tree
@@ -59,6 +60,7 @@ contains
       integer                            :: i      ! Looping index
 
       numtreeslarge = 0
+      numtreessmall = 0
 
       ! We are thinning the stand (DOD)
       do ip = 1, site%numplots
@@ -83,6 +85,7 @@ contains
                     dbh_ind(it) = it
                     dbh(it) = site%plots(ip)%trees(it)%diam_bht
                     if(site%plots(ip)%trees(it)%diam_bht > 5.0) numtreeslarge = numtreeslarge + 1 
+                    if(site%plots(ip)%trees(it)%diam_bht <= 5.0) numtreessmall = numtreessmall + 1
                 end if
             end do
 
@@ -95,8 +98,10 @@ contains
             ! Get number of trees to thin
             ! thin_num = int(float(site%plots(ip)%numtrees)*             &
             !     site%thin_perc)
+
+
             thin_num = int(float(numtreeslarge)*             &
-                site%thin_perc)
+                site%thin_perc) + numtreessmall       
 
             thinloop: do it = 1, site%plots(ip)%numtrees
 
@@ -526,8 +531,10 @@ contains
     integer                            :: i      ! Looping index
 
     ! turn off flag if not white spruce; this won't be replanted
-    if(site%classification /= "WSPS" .and. site%classification /= "WSPP") site%mgmtflag = 0
-
+    if(active_management .and. site%classification /= "WSPS" .and. site%classification /= "WSPP") then 
+        site%mgmtflag = 0
+        print *, "Not replanting this site after harvest"
+    end if 
 
     do ip = 1, site%numplots
       site%plots(ip)%fire = 0

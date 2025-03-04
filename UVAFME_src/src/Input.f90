@@ -86,10 +86,14 @@ contains
                        incr_or_decr_prcp, incr_or_decr_temp, seedrain,        &
                         pixel_size, nrows, ncols, min_seedRain_prob, fire_on,  &
                         conds_testing, use_monthly_clim,              &
-                        init_on, fire_testing, reg_testing, mgmt_testing
+                        init_on, active_management, management_scenario, &
+                        management_scale, fire_testing, reg_testing, mgmt_testing
 
         ! First initialize to default values
-        init_on = .false.
+        init_on = .false.        
+        active_management = .false.
+        management_scenario = ""
+        management_scale = 1.0
 
         ! Basic parameters
         numplots = 200
@@ -131,6 +135,7 @@ contains
         start_year = 0
         end_year = 100
         start_gcm = 100
+        start_amgmt = 2022
         numyears = end_year - start_year
         gcm_duration = end_year - start_gcm
         incr_or_decr_prcp = 'decr'
@@ -150,7 +155,7 @@ contains
             read(rt_file, uvafme, iostat = ios, iomsg = msg)
             if (ios /= 0) then
                 ! Problem reading file - tell user.
-                write(*, '(A, I6, A)') "Error reading run time file",    &
+                write(message, '(A, I6, A)') "Error reading run time file",    &
                     ios, "IOMSG: ", msg
                 call warning(message)
                 call warning("Using default parameters")
@@ -330,6 +335,16 @@ contains
           else
             write(logf, *) "Climate change OFF"
         endif
+
+        if(active_management) then
+            write(logf, *) "Active management is ON. Scenario: ", management_scenario, "Grid resolution (m2)", pixel_size
+            if(management_scenario /= "BAU" .and. management_scenario /= "PRJ") then
+              call warning("Inconsistent active management scenario: not BAU or PRJ")
+            end if
+            if(management_scale < 0.0) then 
+              call warning("Negative management scaler. No management will be triggered")
+            end if 
+          end if
 
         ! If we are debugging, fixed_seed automatically true
         if (debug) then
@@ -563,19 +578,19 @@ contains
   	subroutine read_init_sp(site_id, tot_stems, init_BA, perc_spec, species_ids)
   		!reads total stems and percent species from inventory data
 
-  		integer,                         intent(inout) :: site_id ! Site ID
-  		real, dimension(:), allocatable, intent(out)   :: perc_spec ! Percent of trees in each species
+  		integer,                         intent(inout) :: site_id
+  		real, dimension(:), allocatable, intent(out)   :: perc_spec
   		real,                            intent(out)   :: tot_stems ! trees/ha
   		real,                            intent(out)   :: init_BA ! m2/ha
   		character(len = 8), dimension(:), allocatable,                 &
-  										 intent(out)   :: species_ids ! Species IDs
+  										 intent(out)   :: species_ids
 
       character(len = 8), dimension(:), allocatable  :: all_species_ids
-  		character(len = MAX_LONG_LINE)                 :: line ! file reading aid
-  		character(len = :), dimension(:), allocatable  :: fields ! file reading aid
-  		integer                                        :: siteid ! Temporary site ID
-  		integer                                        :: max_numspec ! Number of species; columns/ species in input file can be changed without re-writing this function
-  		integer                                        :: ios, i, n, lc ! Looping and temporary vars
+  		character(len = MAX_LONG_LINE)                 :: line
+  		character(len = :), dimension(:), allocatable  :: fields
+  		integer                                        :: siteid
+  		integer                                        :: max_numspec
+  		integer                                        :: ios, i, n, lc
 
   		!tot_stems should be in trees/ha
   		!perc_spec is out of 1
@@ -648,18 +663,18 @@ contains
   		!reads in dbh distributions for each species at site from
   		!inventory data
 
-  		integer,                             intent(inout) :: site_id ! Site ID
-  		character(len = 8), dimension(:), allocatable,                 &
-  							                 intent(out)   :: spec_ids ! Species IDs
-  		real, dimension(:, :), allocatable, intent(out)    :: dbh_means ! DBH binned distribution by species
+        integer,                             intent(inout) :: site_id
+        character(len = 8), dimension(:), allocatable,                 &
+                                             intent(out)   :: spec_ids
+        real, dimension(:, :), allocatable, intent(out)    :: dbh_means
 
-  		character(len = 2500)                          :: line ! File reading aid
-  		character(len = :), dimension(:), allocatable  :: fields, cols ! File reading aid
-  		integer                                        :: siteid ! Temporary site ID
-  		integer                                        :: max_numspec ! Number of species; columns/ species in input file can be changed without re-writing this function
-  		integer                                        :: ios, i, n, lc ! Looping and temporary vars
-  		integer                                        :: s, d ! Looping vars
-  		!dbh_means is in units of trees/ha
+        character(len = 2500)                          :: line
+        character(len = :), dimension(:), allocatable  :: fields, cols
+        integer                                        :: siteid
+        integer                                        :: max_numspec
+        integer                                        :: ios, i, n, lc
+        integer                                        :: s, d
+        !dbh_means is in units of trees/ha
 
   		!first line has the list of species and dbh.  parse the line.
   		read(initdbh, '(a)', iostat = ios) line
@@ -704,6 +719,49 @@ contains
   				site_id = invalid
   		end if
   	end subroutine read_init_dbh
+    
+    !:.........................................................................:
+      subroutine read_active_management(unit, mgmt)
+        character(len=3), intent(in) :: unit
+        real, dimension(14), intent(out) :: mgmt
+  
+        ! real :: bau_wsp, bau_mixed, bau_birch, bau_thin, bau_salv ! these are ha/year
+        ! real :: prj_wsp, prj_mixed, prj_birch, prj_thin, prj_salv
+        ! real :: prj_bspharv, prj_bspthin, prj_bspprune, prj_bspshear
+        character(len = 3) :: iunit
+        character(MAX_LINE) :: header ! File header
+        integer             :: ios    ! I/O status
+  
+        iunit = ""
+  
+        ! We don't care about the header
+        read(amfile, '(A)') header
+  
+        ! Read until we find the correct site ID
+        do
+          ! read(amfile, *, iostat = ios, end = 10) iunit, &
+          ! bau_wsp, bau_mixed, bau_birch, bau_thin, bau_salv, &
+          ! prj_wsp, prj_mixed, prj_birch, prj_thin, prj_salv, &
+          ! prj_bspharv, prj_bspthin, prj_bspprune, prj_bspshear
+          read(amfile, *, iostat = ios, end = 10) iunit, mgmt
+  
+        ! Note: fortran breaks if there are empty columns in the csv (ie ,,,,, vs 0,0,0,0,0)
+            if (unit == iunit) then
+                exit
+            endif
+  
+        enddo
+  
+        10      continue
+  
+        rewind(amfile)
+  
+        if (unit /= iunit) then
+            ! Will be skipped
+            call warning("Unit not found in active management data file")
+        endif
+  
+      end subroutine read_active_management
 
     !:.........................................................................:
 
