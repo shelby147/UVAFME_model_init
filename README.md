@@ -9,14 +9,24 @@ Please contact [Shelby Sundquist](https://orcid.org/0000-0001-5379-0008) at ss39
 
 Model input and output data and raw and intermediate data products are available upon request. 
 
+## Updates
+
+_March 2025_
+
+Src code updates to implement dynamic management, where UVAFME allocates forest treatments across a landscape according to a vector of likelihoods for different management actions.
+
+Scripts for inputs and analysis pertaining to a new manuscript, "Individual-tree based modeling climate-adaptive silviculture strategies to inform policy in Alaska’s boreal forest".
+
 ## Repository folder structure
 
 _Summaries are available in select subdirectories in Description.txt_
 
 scripts - creating input files for UVAFME and analyzing output
 
-scripts/inputs - creating input files for TVSF and KLC study areas
+scripts/*project* - inputs and analyses related to specific publications 
 
-scripts/analyses - creating figures from model output in TVSF and KLC
+scripts/*/inputs - creating input files for TVSF and KLC study areas
 
-UVAFME_src - source code for version of UVAFME model used in this study
+scripts/*/analyses - creating figures from model output in TVSF and KLC
+
+UVAFME_src/src - source code for version of UVAFME model used in this study
