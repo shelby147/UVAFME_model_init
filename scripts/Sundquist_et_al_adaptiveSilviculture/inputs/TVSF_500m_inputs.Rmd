@@ -1,0 +1,424 @@
+---
+title: "TVSF_2km_inputs"
+author: "Shelby Sundquist"
+date: "2022-12-06"
+output: html_document
+---
+
+### Updated Feb, 2023 for climate 8-model ensemble projections and use on monsoon
+
+
+Tanana Valley site parameterization
+-Script must be run interactively; requires intermediate upload, scripts, and download from Monsoon
+
+Load libraries, set directories
+```{r}
+library(terra)
+library(data.table)
+library(dplyr)
+library(raster)
+library(rgdal)
+
+dataDir = "raw/"
+tempDir = "scripts/inputs/intermediate_data/"
+outDir = "input_data/mgmt_testing/main/"
+```
+
+
+Input block
+Shapefile with Alaska SF unit boundaries downloaded from:  https://forestrymaps-soa-dnr.hub.arcgis.com/datasets/SOA-DNR::state-forest-boundary-public-view/explore?location=59.970122%2C-147.760600%2C5.33
+on 12-6-2022
+With inventory boundaries downloaded from: https://forestrymaps-soa-dnr.hub.arcgis.com/apps/alaska-statewide-forest-inventory/explore on 4-27-2022
+These data are included in zip file 
+```{r}
+units = vect(paste0(dataDir,"State_Forest_Boundary_Public_View/State_Forest_Boundary.shp"))
+units = units[units$descriptio == "Tanana Valley State Forest",]
+units = units[!is.na(units$unit),]
+plot(units) #check
+inv = vect(paste0(dataDir,"Tanana_Valley_Forest_Inventory_with_Tables_Public_View-shp/TV_Timber_Types.shp"))
+inv$Year = as.integer(inv$Date_Typed) # This line did not work and I have no idea why good grief!
+```
+
+Combining and rasterizing shapefiles to produce 500mx500m site centroids for UVAFME
+```{r}
+#Rasterize units
+res = 500 #500m grid
+r = rast(units, resolution = res) 
+locs = terra::rasterize(units, r, field = "unit")
+newcrs = "+proj=longlat +datum=WGS84"
+locs = project(locs, newcrs)
+
+#Get %area per strata in each pixel
+#Rasterize decides cell value by the polygon in the center of the cell
+r = rast(inv, resolution = res/10) #100 inventory cells to sample per UVAFME site
+invr = terra::rasterize(inv, r, field = "STRATUM")
+invr = project(invr, newcrs)
+invr = crop(invr, ext(locs))
+invr = resample(invr, locs, method = "mode")
+# invr$STRATUM = as.factor(invr$STRATUM)
+
+#Getting inventory dates
+invr2 = terra::rasterize(inv, r, field = "Year")
+invr2 = project(invr2, newcrs)
+invr2 = crop(invr2, ext(locs))
+invr2 = resample(invr2, locs, method = "mode")
+
+#Getting management area for initialization (Tok is less productive)
+mgmt = terra::rasterize(inv, r, field = "UNIT")
+mgmt = project(mgmt, newcrs)
+mgmt = resample(mgmt, locs, method = "mode")
+
+
+locs = as.points(locs)
+invr = as.points(invr)
+invr2 = as.points(invr2)
+mgmt = as.points(mgmt)
+terra::plot(x = locs, "unit")
+terra::plot(x = invr, "STRATUM")
+terra::plot(invr2, "Year")
+terra::plot(mgmt, "UNIT")
+dflocs = as.data.frame(locs, geom = "XY")
+dfinv = as.data.frame(invr, geom = "XY")
+dfinv2 = as.data.frame(invr2, geom = "XY")
+dfmgmt = as.data.frame(mgmt, geom = "XY")
+
+# rm(units)
+# rm(inv)
+
+dflocs = merge(dflocs, dfinv, by = c("x","y"))
+dflocs = merge(dflocs, dfinv2, by = c("x","y"))
+dflocs = merge(dflocs, dfmgmt, by = c("x","y"))
+
+# write.csv(dflocs, paste0(tempDir, "unit_stratum_date_locs.csv"), quote = F, row.names = F)
+```
+
+Building input file for GetSiteDat.R (on Monsoon)
+```{r}
+soilinput = dflocs[,1:2]
+soilinput$name = NA
+soilinput$site = NA
+for(i in 1:nrow(soilinput)) {
+  soilinput$name[i] = paste0("tvsf_",i)
+  soilinput$site[i] = i
+}
+
+colnames(soilinput) = c("longitude","latitude","name","site")
+# write.csv(soilinput, paste0(tempDir, "sitedat_input.csv"), quote = F, row.names = F)
+```
+Run GetSiteDat.R
+
+Building site.csv with soil data from Monsoon script
+(From init::Input.f90 2-20-2023) file variables are:
+                sitename, siteregion, elevation, slope, aspect, asat, afc,     &
+                apwp, osat, ofc, opwp, abd, obd, itxt, hum_input,              &
+                A_depth, wprob, flow, row, col, ind,      &
+                management, sel_cutting, planting, viability, rotation_time,   &
+                dbh_thresh, thinning, year_management, thin_perc, shearblading, &
+                pruning, unit, init_year 
+
+```{r}
+soil = read.csv(paste0(tempDir, "soildat_output.csv"))
+dflocs = read.csv(paste0(tempDir,"unit_stratum_date_locs.csv"))
+key = read.csv(paste0(tempDir, "stratum_key.csv"))
+
+dflocs$Date_Typed = dflocs$Year
+soil$A_depth = 1
+soil$flow = 0; soil$row = 0; soil$col = 0; soil$ind = 0
+soil = merge(soil, dflocs, by.x = c("longitude","latitude"), by.y = c("x","y"))
+
+site = soil %>% select(site,latitude,longitude,name,region,elevation,slope,aspect,a_sat,a_fc,a_pwp,o_sat,o_fc,o_pwp,a_bd,o_bd,itxt,hum_init,A_depth,wprob,flow,row,col,ind, unit, STRATUM, Date_Typed)
+
+#checking and fixing soil issues
+summary(site[,9:17])
+temp = site[is.na(site$itxt),]
+summary(as.factor(temp$STRATUM)) 
+# these are nearly all river/ lake/ bare ground sites that fell within units. I'm pretty comfortable all of discarding these
+site = site[!is.na(site$itxt),]
+
+# site[xor(site$a_sat<site$a_fc, site$a_fc<site$a_pwp),]
+# site[xor(site$o_sat<site$o_fc, site$o_fc<site$o_pwp),] # this has some problem sites
+# site[site$o_sat<site$o_pwp,]
+
+temp = site[site$o_fc<site$o_pwp,]
+for(i in 1:nrow(temp)) {
+  temp[i,"o_fc"] = round(temp[i,"o_pwp"] + (temp[i,"o_sat"] - temp[i,"o_pwp"])/2,2)
+}
+site[site$o_fc<site$o_pwp,] = temp
+
+summary(as.factor(site$STRATUM))
+key[,2:3]
+# less than 20 is forest. Higher numbers are shrubs, meadow, water, other non-forest
+
+site = site[site$STRATUM <= 20,]
+
+
+# Adding the rest of the columns
+site$management = 0
+site$sel_cutting = 0
+site$planting = "PICEglau" # only thing that gets planted (planting only called after harvest)
+site$viability = 1
+site$rotation_time = 0
+site$dbh_thresh = 0 
+site$thinning = 0
+site$year_management = 0
+site$thin_perc = 0
+site$shearblading = 0
+site$pruning = 0
+site$init_year = site$Date_Typed
+
+site = site %>% select(site,latitude,longitude,name,region,elevation,slope,aspect,a_sat,a_fc,a_pwp,o_sat,o_fc,o_pwp,a_bd,o_bd,itxt,hum_init,A_depth,wprob,flow,row,col,ind,management,sel_cutting,planting,viability,rotation_time,dbh_thresh,thinning,year_management,thin_perc,shearblading,pruning,unit,init_year)
+
+# write.csv(site, paste0(outDir, "UVAFME2018_site.csv"), row.names = F, quote = F)
+```
+
+
+Building input file for climateNA
+```{r}
+climateNAinput = site %>% select(site, name, latitude, longitude, elevation)
+colnames(climateNAinput) = c("id1","id2","lat","long","elev")
+
+climateNAinput_1983 = site[site$init_year == 1983,] %>% select(site, name, latitude, longitude, elevation)
+colnames(climateNAinput_1983) = c("id1","id2","lat","long","elev")
+
+climateNAinput_2013 = site[site$init_year == 2013,] %>% select(site, name, latitude, longitude, elevation)
+colnames(climateNAinput_2013) = c("id1","id2","lat","long","elev")
+
+
+# write.csv(climateNAinput, paste0(tempDir, "climateNAinput.csv"), quote = F, row.names = F)
+# write.csv(climateNAinput_1983, paste0(tempDir, "climateNAinput_1983.csv"), quote = F, row.names = F)
+# write.csv(climateNAinput_2013, paste0(tempDir, "climateNAinput_2013.csv"), quote = F, row.names = F)
+```
+
+ClimateNA_v7.31 program (2022)
+Historical time series 1983/2013-2021 - monthly variables (input = climateNAinput_xxxx.csv) - primary variables
+Future time series 2022-2100 - monthly variables - 8 model ensemble SSP 2-4.5 and SSP 5-8.5 (input = climateNAinput.csv) - primary variables
+Historical time series 1961-1990 all variables all sites (input = climateNAinput.csv)
+
+Note: climateNA731 requires eof from excel; open csvs in excel for them to work
+
+
+Build climate files (4):
+ClimateNA - Historical Time Series 1961-1990 - Monthly variables (input = climNAinput.csv)
+Also - 
+
+
+Calling ClimateNA from R
+```{r}
+# cNADir = "/Parameterization/ClimateNA_v731/"
+# exe = "ClimateNA_v7.31.exe"
+# 
+# # Historical time series (x2)
+# input = paste0(Dir, tempDir, "ClimateNAinput_2013.csv")
+# output= paste0(Dir, tempDir, "ClimateNAoutput_2013_2013-2021MP.csv")
+# call = "/Year_2013.ann"
+# system2(paste0(cNADir, exe), args = c("/M", call, input, output), wait = T)
+
+# This isn't working, even following the instructions in the help doc. 
+```
+
+Run 002_params to create 5 files; 4 for normal climate, 1 for lightning
+Not all the parameterization data is available publicly; contact Shelby Sundquist (ss3988@nau.edu) for help. 
+
+Building climateGCM.csv
+```{r}
+site = fread(paste0(outDir, "UVAFME2018_site.csv"))
+#climate_dat_TVSF needs to be unzipped in raw/
+clim1983 = fread(paste0(dataDir, "climate_dat_TVSF/climateNAinput_1983_1983-2021MP.csv"))
+clim2013 = fread(paste0(dataDir, "climate_dat_TVSF/climateNAinput_2013_2013-2021MP.csv"))
+climr45 = fread(paste0(dataDir, "climate_dat_TVSF/climateNAinput_8GCMs_ensemble_ssp245_2022-2100MP.csv"))
+climr85 = fread(paste0(dataDir, "climate_dat_TVSF/climateNAinput_8GCMs_ensemble_ssp585_2022-2100MP.csv"))
+
+GCM45 = rbind(clim1983, clim2013, climr45)
+GCM85 = rbind(clim1983, clim2013, climr85)
+
+climateGCM = site %>% select(site, latitude, longitude)
+GCM45 = select(GCM45, contains(c("Year","id1","Tmin","Tmax","PPT")))
+GCM85 = select(GCM85, contains(c("Year","id1","Tmin","Tmax","PPT")))
+
+GCM45 = merge(GCM45, climateGCM, by.x = "id1", by.y = "site")
+GCM85 = merge(GCM85, climateGCM, by.x = "id1", by.y = "site")
+
+GCM45 = GCM45[,c(1, 39, 40, 2, 3:38)]
+GCM85 = GCM85[,c(1, 39, 40, 2, 3:38)]
+
+cols = c("site" ,"latitude" ,"longitude"  ,"year" ,"tmin_jan" ,"tmin_feb" ,"tmin_mar" ,"tmin_apr" ,"tmin_may" ,"tmin_jun" ,"tmin_jul" ,'tmin_aug' ,"tmin_sep" ,"tmin_oct" ,"tmin_nov" ,"tmin_dec" ,"tmax_jan" ,"tmax_feb" ,"tmax_mar" ,"tmax_apr" ,"tmax_may" ,"tmax_jun" ,"tmax_jul" ,"tmax_aug" ,"tmax_sep" ,"tmax_oct" ,"tmax_nov" ,"tmax_dec" ,"prcp_jan" ,"prcp_feb" ,"prcp_mar" ,"prcp_apr" ,"prcp_may" ,"prcp_jun" ,"prcp_jul" ,"prcp_aug" ,"prcp_sep" ,"prcp_oct" ,"prcp_nov" ,"prcp_dec")
+colnames(GCM45) = cols
+colnames(GCM85) = cols
+
+GCM45 = GCM45[order(GCM45$site, GCM45$year),]
+GCM85 = GCM85[order(GCM85$site, GCM85$year),]
+# fwrite(GCM45, paste0(outDir, "UVAFME2018_climate_GCM_SSP245.csv"), quote = F, row.names = F)
+# fwrite(GCM85, paste0(outDir, "UVAFME2018_climate_GCM_SSP585.csv"), quote = F, row.names = F)
+```
+
+Building lightningGCM.csv
+```{r}
+lightning = fread(paste0(outDir, "UVAFME2018_lightning.csv"))
+histclim = fread(paste0(outDir, "UVAFME2018_climate.csv"))
+GCM45 = fread(paste0(outDir, "UVAFME2018_climate_GCM_SSP245.csv"))
+GCM85 = fread(paste0(outDir, "UVAFME2018_climate_GCM_SSP585.csv"))
+
+lightningGCM45 = data.frame(matrix(ncol=16 ,nrow=0, dimnames=list(NULL, c(colnames(lightning)[1:3], "year", colnames(lightning)[4:15]))))
+lightningGCM85 = data.frame(matrix(ncol=16 ,nrow=0, dimnames=list(NULL, c(colnames(lightning)[1:3], "year", colnames(lightning)[4:15]))))
+
+histclim = histclim %>% group_by(site) %>% mutate(tave_jan = (tmin_jan+tmax_jan)/2,
+                                                  tave_feb = (tmin_feb+tmax_feb)/2,
+                                                  tave_mar = (tmin_mar+tmax_mar)/2,
+                                                  tave_apr = (tmin_apr+tmax_apr)/2,
+                                                  tave_may = (tmin_may+tmax_may)/2,
+                                                  tave_jun = (tmin_jun+tmax_jun)/2,
+                                                  tave_jul = (tmin_jul+tmax_jul)/2,
+                                                  tave_aug = (tmin_aug+tmax_aug)/2,
+                                                  tave_sep = (tmin_sep+tmax_sep)/2,
+                                                  tave_oct = (tmin_oct+tmax_oct)/2,
+                                                  tave_nov = (tmin_nov+tmax_nov)/2,
+                                                  tave_dec = (tmin_dec+tmax_dec)/2)
+
+GCM45 = GCM45 %>% group_by(site, year) %>% mutate(tave_jan = (tmin_jan+tmax_jan)/2,
+                                                  tave_feb = (tmin_feb+tmax_feb)/2,
+                                                  tave_mar = (tmin_mar+tmax_mar)/2,
+                                                  tave_apr = (tmin_apr+tmax_apr)/2,
+                                                  tave_may = (tmin_may+tmax_may)/2,
+                                                  tave_jun = (tmin_jun+tmax_jun)/2,
+                                                  tave_jul = (tmin_jul+tmax_jul)/2,
+                                                  tave_aug = (tmin_aug+tmax_aug)/2,
+                                                  tave_sep = (tmin_sep+tmax_sep)/2,
+                                                  tave_oct = (tmin_oct+tmax_oct)/2,
+                                                  tave_nov = (tmin_nov+tmax_nov)/2,
+                                                  tave_dec = (tmin_dec+tmax_dec)/2)
+
+GCM85 = GCM85 %>% group_by(site, year) %>% mutate(tave_jan = (tmin_jan+tmax_jan)/2,
+                                                  tave_feb = (tmin_feb+tmax_feb)/2,
+                                                  tave_mar = (tmin_mar+tmax_mar)/2,
+                                                  tave_apr = (tmin_apr+tmax_apr)/2,
+                                                  tave_may = (tmin_may+tmax_may)/2,
+                                                  tave_jun = (tmin_jun+tmax_jun)/2,
+                                                  tave_jul = (tmin_jul+tmax_jul)/2,
+                                                  tave_aug = (tmin_aug+tmax_aug)/2,
+                                                  tave_sep = (tmin_sep+tmax_sep)/2,
+                                                  tave_oct = (tmin_oct+tmax_oct)/2,
+                                                  tave_nov = (tmin_nov+tmax_nov)/2,
+                                                  tave_dec = (tmin_dec+tmax_dec)/2)
+
+#Methods from Foster et al 2022:
+# Change in lightning strike frequency was forced according to predictions in
+# Veraverbeke et al. (2017). Veraverbeke et al. (2017) predicted a 24% and 59%
+# increase in lightning strike frequency for the Northwest Territories and interior
+# Alaska, respectively during a 2.84ºC and 2.85ºC increase in temperature, respectively. We thus scaled lightning strike frequency by 20.7% (59/2.85) for each
+# degree C increase for interior Alaska and by 8.45% (24/2.84) for each degree C
+# increase in the Northwest Territories.
+
+
+histclim = histclim[order(histclim$site),]
+GCM45 = GCM45[order(GCM45$site, GCM45$year),]
+GCM85 = GCM85[order(GCM85$site, GCM85$year),]
+for (y in 2022:2100) {
+  tempdiff = GCM45[GCM45$year == y,41:52] - histclim[,40:51]
+  lGCM45 = mapply(`*`, 1+(0.207*tempdiff), lightning[,4:15])
+  lightningGCM45 = rbind(lightningGCM45, cbind(lightning[,1:3], rep(y, nrow(lightning)), lGCM45))
+  
+  tempdiff = GCM85[GCM85$year == y,41:52] - histclim[,40:51]
+  lGCM85 = mapply(`*`, 1+(0.207*tempdiff), lightning[,4:15])
+  lightningGCM85 = rbind(lightningGCM85, cbind(lightning[,1:3], rep(y, nrow(lightning)), lGCM85))
+}
+
+colnames(lightningGCM45) =c(colnames(lightning)[1:3], "year", colnames(lightning)[4:15])
+colnames(lightningGCM85) =c(colnames(lightning)[1:3], "year", colnames(lightning)[4:15])
+# 
+# fwrite(lightningGCM45, paste0(outDir, "UVAFME2018_lightning_GCM_SSP245.csv"))
+# fwrite(lightningGCM85, paste0(outDir, "UVAFME2018_lightning_GCM_SSP585.csv"))
+
+```
+
+Building sitelist, rangelist
+```{r}
+sitelist = cbind(site$site, 1:nrow(site))
+colnames(sitelist) = c("siteID","runID")
+sitelist = as.data.frame(sitelist)
+sitelist$altitude = NA; sitelist$end = NA
+write.csv(sitelist, paste0(outDir, "UVAFME2018_sitelist.csv"), quote = F, row.names = F, na = "")
+
+rangelist  = site %>% select(site, latitude, longitude)
+rangelist$ALNUsinu = 1
+rangelist$ALNUtenu = 1
+rangelist$BETUneoa = 1
+rangelist$LARIlari = 0
+rangelist$PICEglau = 1
+rangelist$PICEmari = 1
+rangelist$POPUbals = 1
+rangelist$POPUtrem = 1
+rangelist$SALIplan = 0
+rangelist$SALIscou = 1
+
+# write.csv(rangelist, paste0(outDir, "UVAFME2018_rangelist.csv"), quote = F, row.names = F)
+```
+
+Building initialization files
+strata_init_* are generated from init_strata_summaries.Rmd
+```{r}
+site = fread(paste0(outDir, "UVAFME2018_site.csv"))
+locs = fread(paste0(tempDir, "unit_stratum_date_locs.csv"))
+key = fread(paste0(tempDir,"stratum_key.csv"))
+init_sp_vol1 = fread(paste0(tempDir,"strata_init_sp_vol1.csv"))
+init_dbh_vol1 = fread(paste0(tempDir,"strata_init_dbh_vol1.csv"))
+init_sp_vol2 = fread(paste0(tempDir,"strata_init_sp_vol2.csv"))
+init_dbh_vol2 = fread(paste0(tempDir,"strata_init_dbh_vol2.csv"))
+
+
+site = merge(site, locs, by.x = c("longitude","latitude"), by.y = c("x","y"))
+init_sp = site %>% dplyr::select(site, STRATUM, UNIT)
+init_dbh = site %>% dplyr::select(site, STRATUM, UNIT)
+#Unit 3 is Tok (volume 2)
+
+init_sp1 = merge(init_sp[init_sp$UNIT < 3,], init_sp_vol1, by.x = "STRATUM", by.y = "stratum")
+init_sp2 = merge(init_sp[init_sp$UNIT == 3,], init_sp_vol2, by.x = "STRATUM", by.y = "stratum")
+init_sp = rbind(init_sp1, init_sp2)
+init_sp$BA = -999
+init_sp = init_sp[,-c(1,3)]
+init_sp = init_sp[,c(1,2,13,3:12)]
+
+init_dbh1 = merge(init_dbh[init_dbh$UNIT < 3,], init_dbh_vol1, by.x = "STRATUM", by.y = "stratum")
+init_dbh2 = merge(init_dbh[init_dbh$UNIT == 3,], init_dbh_vol2, by.x = "STRATUM", by.y = "stratum")
+init_dbh = rbind(init_dbh1, init_dbh2)
+init_dbh = init_dbh[,-c(1,3)]
+
+
+# write.csv(init_sp, paste0(outDir, "UVAFME2018_init_spec.csv"), row.names = F, quote = F)
+# write.csv(init_dbh, paste0(outDir, "UVAFME2018_init_dbh.csv"), row.names = F, quote = F)
+
+#Finally, edit site file to saturate dwarf black spruce sites:
+site = as.data.frame(site)
+site[site$STRATUM == 20,]$hum_init = 200
+site[site$STRATUM == 20,]$a_sat = max(site[site$STRATUM == 20,]$a_sat, 0.45)
+site[site$STRATUM == 20,]$o_sat = max(site[site$STRATUM == 20,]$o_sat, 0.45)
+site[site$STRATUM == 20,]$a_fc = max(site[site$STRATUM == 20,]$a_fc, 0.3)
+site[site$STRATUM == 20,]$o_fc = max(site[site$STRATUM == 20,]$o_fc, 0.3)
+
+site[site$STRATUM != 20,]$a_sat = min(site[site$STRATUM == 20,]$a_sat, 0.35)
+site[site$STRATUM != 20,]$o_sat = min(site[site$STRATUM == 20,]$o_sat, 0.35)
+site[site$STRATUM != 20,]$a_fc = min(site[site$STRATUM == 20,]$a_fc, 0.2)
+site[site$STRATUM != 20,]$o_fc = min(site[site$STRATUM == 20,]$o_fc, 0.2)
+site[site$STRATUM != 20,]$a_pwp = min(site[site$STRATUM == 20,]$a_pwp, 0.06)
+site[site$STRATUM != 20,]$o_pwp = min(site[site$STRATUM == 20,]$o_pwp, 0.06)
+
+site$unit = site$unit.x
+site = site %>% dplyr::select(site,latitude,longitude,name,region,elevation,slope,aspect,a_sat,a_fc,a_pwp,o_sat,o_fc,o_pwp,a_bd,o_bd,itxt,hum_init,A_depth,wprob,flow,row,col,ind,management,sel_cutting,planting,viability,rotation_time,dbh_thresh,thinning,year_management,thin_perc,shearblading,pruning,unit,init_year)
+
+# site$prescribed_burn = 0
+
+# write.csv(site, paste0(outDir, "UVAFME2018_site.csv"), row.names = F, quote = F)
+```
+
+Building management file
+This was mostly done by hand in a csv editor because the data were small. 
+I pulled together unit summaries prepared by David Lutz (Dec 2022) and only convert them from ac/yr to ha/yr here. 
+```{r}
+mgmt = fread(paste0(dataDir, "mgmt_acyr.csv"))
+ac2ha = 0.404686
+mgmt[,2:15] = mgmt[,2:15]*ac2ha
+# write.csv(mgmt, paste0(outDir, "UVAFME2018_active_management.csv"), row.names = F, quote = F)
+```
+
+
+Create runtimes by hand... there are only 6
+Also, copy current specieslist and litterpars
