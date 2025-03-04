@@ -165,6 +165,7 @@ contains
         self%fc_fire = 1.0
         self%fc_perm = 1.0
         self%soil%lai_w0 = INIT_LAIW
+        
         ! Initialize soil properties
 
         ! Snowpack initialized to 0.0

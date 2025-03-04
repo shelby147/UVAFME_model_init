@@ -809,6 +809,14 @@ contains
 
             ! Convert aet to mm for decomposition
             aet_mm = aet*10.0
+            
+                ! if (year == 0 .and. init_on .and. &
+                ! site%plots(ip)%soil%cohorts(1,2) == site%plots(ip)%soil%cohorts(1,1)*0.006) then
+                !   ! this is an initialized black spruce site; let's initialize some moss!
+                !   site%plots(ip)%soil%moss_biom = 300.0
+                !   ! site%plots(ip)%soil%litter(IMOSS) = site%plots(ip)%soil%litter(IMOSS)/plotsize*HEC_TO_M2*KG_TO_T
+                !   ! site%plots(ip)%soil%M_depth = site%plots(ip)%soil%moss_biom/plotsize/BULK_MOSS
+                ! end if
 
             call moss(site%plots(ip)%soil, alff, site%plots(ip)%cla,           &
                 site%plots(ip)%soil%dec_fuel, drydays, site%site_id, ip, year)
@@ -1343,8 +1351,7 @@ contains
                         site%plots(ip)%fc_drought(is),                         &
                         site%plots(ip)%fc_perm(is),                            &
                         site%plots(ip)%fc_flood(is),                           &
-                        envstress,                                             &
-                        site%plots(ip)%fc_nutr(is))
+                        envstress,  site%plots(ip)%fc_nutr(is))
 
                     ! Calculate actual diameter increment growth
                     dt = max(0.0, site%plots(ip)%trees(it)%diam_opt*envstress)
@@ -1644,6 +1651,8 @@ contains
         real                               :: CFB              ! Crown fraction burnt (0-1)
         real                               :: R_final          ! Final rate of spread (surface + crown) (m/min)
         real                               :: I_final          ! Final fire intensity (surface + crown) (kW/m)
+        real, dimension(14)                :: pactvmgmt        ! Probability of active management at the site
+        real                               :: tpactvmgmt        ! Probability of active management at the site
         integer                            :: num_species      ! Number of species on site
         integer                            :: it, ip, iu           ! Looping indices
         integer                            :: dt               ! Counter for dead trees
@@ -1672,44 +1681,78 @@ contains
 
         site%buldozed = .false.
 
+        if(active_management) then
+            call write_management_data(site, year, mgmt)
+          active_treatments: if(site%mgmtflag == 1) then !harvest
+            print *, "Harvesting", site%site_id
+              call Harvest(site) ! add argument for cut threshold
+          else if (site%mgmtflag == 2) then active_treatments ! thin 30%
+            print *, "Thinning", site%site_id
+            call Thin(site, 0.30)
+            site%mgmtflag = 0
+          else if (site%mgmtflag == 3) then active_treatments ! salvage
+            print *, "Salvage", site%site_id
+            ! This "salvages" a site after a significant mortality event. 
+            ! Large boles for dead trees are removed. The rest goes into litter/ dead pools 
+            ! like normal mortality. This process plays out within Mortality() below
+            ! site%mgmtflag = 0
+          else if (site%mgmtflag == 4) then active_treatments ! shearblade
+            print *, "Shearblading", site%site_id
+            call Shearblade(site)
+            site%mgmtflag = 0
+          else if (site%mgmtflag == 5) then active_treatments ! prune
+            print *, "Pruning", site%site_id
+            call Prune(site)
+            site%mgmtflag = 0
+
+          end if active_treatments
+
+        else
+            ! if(site%sel_cutting .and. site%planting /= "" .and. sel_cut == .false. &
+            ! .and. ((year > site%year_management) .and. (mod((year - site%yedayfirear_management),     &
+            ! site%rotation_time) <= 5))) then
+            ! ! runs selective cut at management year and at rotations afterward
+            !     newplant = .true.
+            ! end if
               treatments: if (site%management .and. site%thinning .and.          &
                   year == site%year_management) then
                   ! We are thinning the stand (DOD)
                   site%mgmtflag = 2
-                  call write_management_data(site, year, mgmt)
                   call Thin(site, site%thin_perc)
-                  site%mgmtflag = 0
 
               else if (site%management .and. site%shearblading .and.             &
                   year == site%year_management) then treatments
     
                   ! We are shearblading
                   site%mgmtflag = 4
-                  call write_management_data(site, year, mgmt)
                   call Shearblade(site)
-                  site%mgmtflag = 0
 
                 ! else if (site%management .and. site%sel_cutting .and. (year == site%year_management                   &
                 !     .or. (year > site%year_management .and. mod((year - site%year_management), site%rotation_time == 0)))) then treatments
                 else if (site%management .and. site%sel_cutting .and. (year == site%year_management)) then treatments
                 site%mgmtflag = 1
-                call write_management_data(site, year, mgmt)
                 call Harvest(site)
-                ! Do not turn off mgmtflag yet; planting will occur in regen routine 
 
 
               else if(site%management .and. site%pruning .and. &
                 year == site%year_management) then treatments 
                 ! We are pruning
                 site%mgmtflag = 5
-                call write_management_data(site, year, mgmt)
                 call Prune(site)
-                site%mgmtflag = 0
     
-              else treatments 
-                call write_management_data(site, year, mgmt)
               end if treatments
     
+              call write_management_data(site, year, mgmt)
+            
+              !A lazy way to test planting after shearblading. 
+              ! Eventually I may want to replace mgmtflag as the mechanism to initiate planting
+              if(site%mgmtflag == 4 .or. site%mgmtflag == 1) then 
+                  site%mgmtflag = 1
+              else 
+                  site%mgmtflag = 0
+              end if 
+          end if
+  
 
             ! if (site%already_cut) then
             !     if (site%management .and. site%sel_cutting .and.               &
@@ -2790,14 +2833,18 @@ contains
                   ! We initialize planting routine for a species
                   is = 1
                   do while(is <= num_species)
-                    if(site%species(is)%unique_id /= site%planting) exit
-                    !print *, is, site%species(is)%unique_id
+                    if(site%species(is)%unique_id == site%planting) exit
                     is = is + 1
                   end do
-                  if(is > num_species) exit planting 
+                  if(is > num_species) then 
+                    site%mgmtflag = 0
+                    exit planting 
+                  end if 
                   if(ip == 1) write(sitef, *) "Initializing planting. Calendar year", year, site%species(is)%unique_id
                   if (site%species(is)%plant_dens > 0) then
-                !
+                    print *, is, site%species(is)%unique_id
+
+                    !
                 !   !  Add seedlings from planting
                 !     if(ip == 1) print *, "before", site%plots(ip)%seedling(is)
                 !     site%plots(ip)%seedling(is) = site%plots(ip)%seedling(is) + &

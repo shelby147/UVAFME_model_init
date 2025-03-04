@@ -223,6 +223,10 @@ contains
           call open_and_check('_init_spec.csv', inputdir, initspec, 1, 'Initial species')
           call open_and_check('_init_dbh.csv', inputdir, initdbh, 1, 'Initial dbh')
         end if
+        
+        if(active_management) then
+          call open_and_check('_active_management.csv', sitedir, amfile, 1, 'active management')
+        end if
 
         write(logf, *) "Opened input files"
 
