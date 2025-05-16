@@ -464,7 +464,7 @@ ggsave(paste0(figDir, "Fig3b2.png"), f3b2, width = 9, height = 6)
 
 # Also need a 2020 historical baseline plot (could just be a bar with percentages in corresponding colors)
 
-# Supplementary fig showing increase in fire mortality
+# Supplementary fig showing increase in fire frequency
 f = "Total_Plot_Values.csv"
 plotsdat = data.frame(matrix(ncol=length(cols[[f]]) + 1,nrow=0, dimnames=list(NULL, c(cols[[f]], "climscen"))))
 m = "cf"
@@ -498,6 +498,88 @@ fsfire = ggplot(temp, aes(year, (count/15819)*100, color = climscen)) + geom_lin
   theme_linedraw() + biglabels + xlim(2025, 2100) + xlab("Year") + ylab("Annual percent of sites with fire") + ylim(0,5) +
   scale_color_manual(breaks = c("Historic climate","SSP2-4.5", "SSP5-8.5"), values = c("#92C5DE", "#D6604D", "#67001F"), name = "Climate scenario")
 ggsave(paste0(figDir, "FigSFire.png"), fsfire, width = 9, height = 6)
+
+
+# Supplementary fig showing quantity and causes of mortality under different climate scenarios
+deaths = c("gdd_death","drought_death","shade_death","perm_death","flood_death",
+            "nutrient_death","fire_death","harvest_death","wind_death")
+
+temp = plotsdat %>% group_by(climscen, year) %>% summarize_all(mean)
+temp2 = melt(temp[,c("year","climscen",deaths)], id.vars = c("year","climscen"))
+temp2$climscen = climnames2(as.character(temp2$climscen))
+temp3 = temp2 %>% group_by(year, climscen) %>% summarize(all_death = sum(value))
+temp3$variable = "all_death"
+temp3 = temp3 %>% rename(value = all_death)
+temp2 = rbind(temp2, temp3)
+temp3 = temp2 %>% group_by(year, climscen) %>% subset(!variable %in% c("shade_death","all_death")) %>% summarize(all_death_not_shade = sum(value))
+temp3$variable = "all_death_not_shade"
+temp3 = temp3 %>% rename(value = all_death_not_shade)
+temp2 = rbind(temp2, temp3)
+
+fsdeath = ggplot(subset(temp2, !variable %in% c("harvest_death","wind_death")), aes(year, value/ha_to_km2, color = climscen)) + facet_wrap(~variable) + geom_line(size = 1.3) +
+  theme_linedraw() + biglabels + xlim(2025, 2100) + xlab("Year") + ylab("Annual mortality by cause (Mg C/km2)") + 
+  scale_color_manual(breaks = c("Historic climate","SSP2-4.5", "SSP5-8.5"), values = c("#92C5DE", "#D6604D", "#67001F"), name = "Climate scenario") + remove_legend
+ggsave(paste0(figDir, "FigSDeath.png"), fsdeath, width = 12, height = 8)
+
+# Supplementary fig showing 
+
+# Supplementary fig showing annual basal area increment in each climate scenario across TVSF (growth only, not subtracting for mortality)
+f = "Dead_Species_Data.csv"
+deaddat = data.frame(matrix(ncol=length(cols[[f]]) + 1,nrow=0, dimnames=list(NULL, c(cols[[f]], "climscen"))))
+m = "cf"
+for(c in clims) {
+  path = paste0(outDir, landscapeDir, m, "/", c, "/", f)
+  temp = fread(path)
+  temp$mgmtscen = m
+  temp$climscen = c
+  deaddat = rbind(deaddat, temp)
+}
+deaddat$climscen = factor(deaddat$climscen, clims)
+deaddat[deaddat ==-999] <- NA
+
+temp = plotsdat %>% group_by(climscen, siteID) %>% mutate(dBiom = total_biomC - lag(total_biomC)) # Change in basal area on the stand (this subtracts when trees die)
+temp = temp %>% group_by(climscen, year) %>% summarize(mdBiom = mean(dBiom))
+head(temp) # making sure I didn't lag when I should have lead
+
+temp2 = deaddat %>% group_by(climscen, siteID, year) %>% summarize(deadBiom = sum(total_biomC, na.rm = T))
+temp2 = temp2 %>% group_by(climscen, year) %>% summarize(mdeadBiom = mean(deadBiom))
+
+temp3 = merge(temp, temp2, by = c("climscen","year"))
+temp3$mgrowthBiom = temp3$mdBiom + temp3$mdeadBiom
+temp3$climscen = climnames2(as.character(temp3$climscen))
+
+fgrowthbiom = ggplot(temp3, aes(year, mgrowthBiom/ha_to_km2, color = climscen)) + geom_line(size = 1.3) +
+  theme_linedraw() + biglabels + xlim(2025, 2100) + xlab("Year") + ylab("Annual biomass growth (Mg C/ km2)") + 
+  scale_color_manual(breaks = c("Historic climate","SSP2-4.5", "SSP5-8.5"), values = c("#92C5DE", "#D6604D", "#67001F"), name = "Climate scenario")
+ggsave(paste0(figDir, "FigSGrowthBiom.png"), fgrowthbiom, width = 9, height = 6)
+
+# Supplementary fig showing annual growth limiting factors for all species across TVSF
+rsps = c("degday","drought","shade", "perm","flood","nutrient")
+
+f = "Species_Data.csv"
+specdat = data.frame(matrix(ncol=length(cols[[f]]) + 1,nrow=0, dimnames=list(NULL, c(cols[[f]], "climscen"))))
+m = "cf"
+for(c in clims) {
+  path = paste0(outDir, landscapeDir, m, "/", c, "/", f)
+  temp = fread(path)
+  temp$mgmtscen = m
+  temp$climscen = c
+  specdat = rbind(specdat, temp)
+}
+specdat$climscen = factor(specdat$climscen, clims)
+specdat[specdat == -999] <- NA
+
+temp = specdat %>% group_by(year, climscen) %>% summarize(degday = weighted.mean(degday_resp, basal_area, na.rm = T), drought = weighted.mean(drought_resp, basal_area, na.rm = T), 
+shade = weighted.mean(shade_resp, basal_area, na.rm = T), perm = weighted.mean(perm_resp, basal_area, na.rm = T), 
+flood = weighted.mean(flood_resp, basal_area, na.rm = T), nutrient = weighted.mean(nutrient_resp, basal_area, na.rm = T))
+
+temp2 = melt(temp[,c("climscen","year",rsps)], id.vars = c("climscen","year"))
+temp2$climscen = climnames2(as.character(temp2$climscen))
+
+fresp = ggplot(temp2, aes(year, value, color = climscen))  + facet_wrap(~variable) + geom_line(size = 1.3) +
+  theme_linedraw() + biglabels + xlim(2025, 2100) + xlab("Year") + ylab("Growth response (0-1)") + 
+  scale_color_manual(breaks = c("Historic climate","SSP2-4.5", "SSP5-8.5"), values = c("#92C5DE", "#D6604D", "#67001F"), name = "Climate scenario") + remove_legend
+ggsave(paste0(figDir, "FigSResp.png"), fresp, width = 12, height = 8)
 
 
 # Supplementary fig showing what reproductive forest typically looks like 
@@ -830,8 +912,8 @@ temp3 = temp3 %>% group_by(ysincemgmt, climscen, variable) %>%
   summarize(diff = mean(value, na.rm = T), q025 = quantile(value, 0.25, na.rm = T), q975 = quantile(value, 0.75, na.rm = T))
 temp3 = temp3[temp3$ysincemgmt != 0,]
 
-fsdf <- ggplot(temp3[temp3$climscen == "0degCC",], aes(x = ysincemgmt, y = diff, color = variable))  + 
-  xlim(-1, 40) + ylim(0,0.5) + geom_line(size = 1.3) + ylab("Within-site deciduous fraction change") + xlab("Years since treatment") + 
+fsdf <- ggplot(temp3[temp3$climscen == "0degCC",], aes(x = ysincemgmt, y = diff*100, color = variable))  + 
+  xlim(-1, 40) + ylim(0,50) + geom_line(size = 1.3) + ylab("Within-site deciduous fraction change") + xlab("Years since treatment") + 
   theme_linedraw() + biglabels +   scale_color_brewer(palette = "Set1", direction = -1) + remove_legend + geom_hline(yintercept = 0)
 ggsave(paste0(figDir, "FigSDF.png"), fsdf, width = 9, height = 6)
 
@@ -848,7 +930,7 @@ temp3 = temp3 %>% group_by(ysincemgmt, climscen, variable) %>%
   summarize(diff = mean(value, na.rm = T), q025 = quantile(value, 0.25, na.rm = T), q975 = quantile(value, 0.75, na.rm = T))
 temp3 = temp3[temp3$ysincemgmt != 0,]
 
-fsdfb <- ggplot(temp3[temp3$climscen == "0degCC",], aes(x = ysincemgmt, y = diff, color = variable))  + 
+fsdfb <- ggplot(temp3[temp3$climscen == "0degCC",], aes(x = ysincemgmt, y = diff*100, color = variable))  + 
   # geom_ribbon(aes(ymin = q025, ymax = q975, alpha = 0.1, fill = NA, color = variable)) + 
   xlim(-1, 40) + geom_line(size = 1.3) + ylab("Within-site deciduous fraction change") + xlab("Years since treatment") + 
   theme_linedraw() + biglabels +   scale_color_brewer(palette = "Set1", direction = -1) + remove_legend + geom_hline(yintercept = 0)
